@@ -1,0 +1,50 @@
+name: Deploy ABC Startup Infrastructure
+
+# ----------------------------------------
+# MANUAL trigger only
+# Prevents accidental deployments on push
+# ----------------------------------------
+on:
+  workflow_dispatch:
+
+permissions:
+  # Required for GitHub OIDC → AWS role assumption
+  id-token: write
+  contents: read
+
+jobs:
+  deploy:
+    name: Terraform Apply
+    runs-on: ubuntu-latest
+
+    steps:
+      # -----------------------------------
+      # Checkout repository code
+      # -----------------------------------
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # -----------------------------------
+      # Authenticate to AWS using OIDC
+      # Assumes a single shared IAM role
+      # -----------------------------------
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::952365420082:role/GitHubActions-IaC-Deployer
+          aws-region: ap-south-1
+
+      # -----------------------------------
+      # Install Terraform CLI
+      # -----------------------------------
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+
+      # -----------------------------------
+      # Initialize backend and apply config
+      # Uses S3 backend + lock file
+      # -----------------------------------
+      - name: Terraform Init & Apply
+        run: |
+          terraform init -input=false
+          terraform apply -auto-approve
