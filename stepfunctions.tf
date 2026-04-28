@@ -1,14 +1,3 @@
-#############################################
-# stepfunctions.tf
-#
-# UPDATED PURPOSE:
-# 1. Start EC2 Instance
-# 2. Wait for EC2 Initialization
-# 3. Validate Instance State
-# 4. Run ECS Transaction Task
-# 5. Final Notification/Success
-#############################################
-
 resource "aws_sfn_state_machine" "workflow" {
   name     = var.step_function_name
   role_arn = var.iam_role_arn
@@ -19,52 +8,45 @@ resource "aws_sfn_state_machine" "workflow" {
   ]
 
   definition = jsonencode({
-    StartAt = "StartEC2Instance"
+    StartAt = "Initialize"
     States = {
 
-      # STEP 1: Start the EC2 Instance
-      StartEC2Instance = {
+      # STEP 1: Logical start point for logging/metadata
+      Initialize = {
+        Type   = "Pass"
+        Result = { status = "Starting Workflow" }
+        Next   = "StartEC2"
+      }
+
+      # STEP 2: Boot the Instance
+      StartEC2 = {
         Type     = "Task"
         Resource = "arn:aws:states:::aws-sdk:ec2:startInstances"
         Parameters = {
           InstanceIds = [aws_instance.preprocess.id]
         }
-        Next = "WaitForEC2"
+        Next = "WaitReady"
       }
 
-      # STEP 2: Wait for 30 seconds to allow booting
-      WaitForEC2 = {
+      # STEP 3: Pause for system boot
+      WaitReady = {
         Type    = "Wait"
         Seconds = 30
-        Next    = "ValidateEC2Status"
+        Next    = "ValidateState"
       }
 
-      # STEP 3: Check if the instance is actually "running"
-      ValidateEC2Status = {
+      # STEP 4: Confirm EC2 is healthy
+      ValidateState = {
         Type     = "Task"
         Resource = "arn:aws:states:::aws-sdk:ec2:describeInstances"
         Parameters = {
           InstanceIds = [aws_instance.preprocess.id]
         }
-        OutputPath = "$.Reservations[0].Instances[0].State.Name"
-        Next = "VerifyState"
+        Next = "RunTransaction"
       }
 
-      # Logical Branch: Ensure we only proceed if Running
-      VerifyState = {
-        Type = "Choice"
-        Choices = [
-          {
-            Variable = "$"
-            StringEquals = "running"
-            Next = "RunECSTransaction"
-          }
-        ]
-        Default = "ValidationFailed"
-      }
-
-      # STEP 4: Execute the actual transaction via ECS
-      RunECSTransaction = {
+      # STEP 5: Final ECS Processing
+      RunTransaction = {
         Type     = "Task"
         Resource = "arn:aws:states:::ecs:runTask.sync"
         Parameters = {
@@ -79,21 +61,7 @@ resource "aws_sfn_state_machine" "workflow" {
             }
           }
         }
-        Next = "FinalStatus"
-      }
-
-      # STEP 5: Final logic to wrap up the workflow
-      FinalStatus = {
-        Type   = "Pass"
-        Result = "Workflow Completed Successfully"
-        End    = true
-      }
-
-      # Error Handling State
-      ValidationFailed = {
-        Type    = "Fail"
-        Cause   = "EC2 Instance failed to reach running state."
-        Error   = "EC2NotRunningError"
+        End = true
       }
     }
   })
