@@ -29,14 +29,16 @@ The system utilizes a **synchronized state machine** to gate processing based on
     |                                                                              |
     |   [ S3 Bucket ] --> [ EventBridge ] --> [ Step Functions ]                   |
     |      (Input)           (Event Bus)         (Orchestrator)                    |
-    |                                              |                               |
-    |                          +------------------+------------------+             |
-    |                          |                                     |             |
-    |                (Step 1: Status Check)                (Step 2: Execution)     |
-    |                          |                                     |             |
-    |                          v                                     v             |
-    |                   [ EC2 Instance ]                    [ ECS Fargate Task ]   |
-    |                    (Dependency)                        (Batch Logic)         |
+    |                                                |                             |
+    |                                                | (Step 1: Status Check)      |
+    |                                                v                             |
+    |                                         [ EC2 Instance ]                     |
+    |                                          (Dependency)                        |
+    |                                                |                             |
+    |                                                | (Step 2: Execution)         |
+    |                                                v                             |
+    |                                       [ ECS Fargate Task ]                   |
+    |                                          (Batch Logic)                       |
     |                                                                              |
     +------------------------------------------------------------------------------+
 ```
