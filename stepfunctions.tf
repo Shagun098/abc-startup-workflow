@@ -1,3 +1,11 @@
+#############################################
+# stepfunctions.tf
+#
+# PURPOSE:
+# - Coordinate preprocessing and processing stages
+# - Allow ECS execution when EC2 is running
+#############################################
+
 resource "aws_sfn_state_machine" "workflow" {
   name     = var.step_function_name
   role_arn = var.iam_role_arn
@@ -8,51 +16,60 @@ resource "aws_sfn_state_machine" "workflow" {
   ]
 
   definition = jsonencode({
-    StartAt = "Initialize"
+    StartAt = "DescribeEC2"
+
     States = {
 
-      # STEP 1: Logical start point for logging/metadata
-      Initialize = {
-        Type   = "Pass"
-        Result = { status = "Starting Workflow" }
-        Next   = "StartEC2"
-      }
-
-      # STEP 2: Boot the Instance
-      StartEC2 = {
+      ##################################
+      # DescribeEC2
+      #
+      # Retrieves EC2 instance state
+      ##################################
+      DescribeEC2 = {
         Type     = "Task"
-        Resource = "arn:aws:states:::aws-sdk:ec2:startInstances"
+        Resource = "arn:aws:states:::aws-sdk:ec2:describeInstanceStatus"
+
         Parameters = {
-          InstanceIds = [aws_instance.preprocess.id]
+          InstanceIds         = [aws_instance.preprocess.id]
+          IncludeAllInstances = true
         }
-        Next = "WaitReady"
+
+        ResultPath = "$.ec2"
+        Next       = "ValidateEC2"
       }
 
-      # STEP 3: Pause for system boot
-      WaitReady = {
-        Type    = "Wait"
-        Seconds = 30
-        Next    = "ValidateState"
+      ##################################
+      # ValidateEC2
+      #
+      # Checks only whether the EC2
+      # instance is in running state
+      ##################################
+      ValidateEC2 = {
+        Type = "Choice"
+
+        Choices = [{
+          Variable     = "$.ec2.InstanceStatuses[0].InstanceState.Name"
+          StringEquals = "running"
+          Next         = "RunECSTask"
+        }]
+
+        Default = "EC2NotRunning"
       }
 
-      # STEP 4: Confirm EC2 is healthy
-      ValidateState = {
-        Type     = "Task"
-        Resource = "arn:aws:states:::aws-sdk:ec2:describeInstances"
-        Parameters = {
-          InstanceIds = [aws_instance.preprocess.id]
-        }
-        Next = "RunTransaction"
-      }
-
-      # STEP 5: Final ECS Processing
-      RunTransaction = {
+      ##################################
+      # RunECSTask
+      #
+      # Executes ECS Fargate batch task
+      ##################################
+      RunECSTask = {
         Type     = "Task"
         Resource = "arn:aws:states:::ecs:runTask.sync"
+
         Parameters = {
           LaunchType     = "FARGATE"
           Cluster        = aws_ecs_cluster.main.arn
           TaskDefinition = aws_ecs_task_definition.processor.arn
+
           NetworkConfiguration = {
             AwsvpcConfiguration = {
               Subnets        = [aws_subnet.main.id]
@@ -61,7 +78,20 @@ resource "aws_sfn_state_machine" "workflow" {
             }
           }
         }
+
         End = true
+      }
+
+      ##################################
+      # EC2NotRunning
+      #
+      # Terminates workflow if EC2
+      # is not in running state
+      ##################################
+      EC2NotRunning = {
+        Type  = "Fail"
+        Error = "EC2NotRunning"
+        Cause = "EC2 instance is not in running state"
       }
     }
   })
