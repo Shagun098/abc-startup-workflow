@@ -2,7 +2,7 @@
 
 ***
 
-# 🚀 Transaction Workflow System
+# 🚀 Daily Transaction Workflow System
 ### Enterprise Event-Driven Architecture (AWS)
 
 This repository contains the complete **Infrastructure as Code (IaC)** and orchestration logic for an automated transaction processing platform. Engineered for **ABC Startup**, the system leverages a serverless-first approach to ensure scalability, auditability, and strict cost control.
